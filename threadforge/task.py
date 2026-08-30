@@ -1,6 +1,16 @@
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Callable, Optional
 from uuid import uuid4
+
+
+class TaskState(str, Enum):
+    """Lifecycle states of a task."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 @dataclass
@@ -18,6 +28,8 @@ class Task:
 
     max_retries: int = 0
     retry_count: int = 0
+
+    state: TaskState = TaskState.QUEUED
 
     result: Optional[Any] = None
     error: Optional[BaseException] = None
