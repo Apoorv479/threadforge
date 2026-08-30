@@ -1,5 +1,4 @@
 import threading
-import time
 from dataclasses import dataclass
 
 
@@ -64,6 +63,16 @@ class Metrics:
         with self._lock:
             self._running -= 1
             self._failed += 1
+            self._total_execution_time += execution_time
+
+    def record_retry_failure(
+        self,
+        execution_time: float,
+    ) -> None:
+        """Record an execution attempt that will be retried."""
+
+        with self._lock:
+            self._running -= 1
             self._total_execution_time += execution_time
 
     def record_retry(self) -> None:
