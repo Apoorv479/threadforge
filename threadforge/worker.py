@@ -1,12 +1,12 @@
 import threading
 
 from .queue import TaskQueue
-from .task import Task, TaskState
+from .task import Task
 
 
 class Worker(threading.Thread):
     """
-    Worker thread that continuously consumes tasks from the queue.
+    Worker thread that continuously consumes tasks.
     """
 
     def __init__(
@@ -25,6 +25,7 @@ class Worker(threading.Thread):
 
         self.completed_tasks = 0
         self.failed_tasks = 0
+        self.retried_tasks = 0
 
     def run(self) -> None:
         """Worker execution loop."""
@@ -47,18 +48,27 @@ class Worker(threading.Thread):
                 self.task_queue.task_done()
 
     def _execute(self, task: Task) -> None:
-        """Execute a task and update its lifecycle state."""
+        """Execute task and handle retry policy."""
 
-        task.state = TaskState.RUNNING
+        task.mark_running()
 
         try:
-            task.result = task.execute()
-            task.state = TaskState.COMPLETED
+            result = task.execute()
+
+            task.mark_completed(result)
 
             self.completed_tasks += 1
 
         except BaseException as exc:
-            task.error = exc
-            task.state = TaskState.FAILED
 
-            self.failed_tasks += 1
+            if task.can_retry():
+                task.prepare_retry()
+
+                self.retried_tasks += 1
+
+                self.task_queue.put(task)
+
+            else:
+                task.mark_failed(exc)
+
+                self.failed_tasks += 1
