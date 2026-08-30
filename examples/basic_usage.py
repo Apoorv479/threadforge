@@ -1,16 +1,8 @@
-import time
-
 from threadforge.engine import ThreadForge
 
 
 def process_job(job_id: int) -> str:
-    print(f"Processing job {job_id}")
-
-    time.sleep(1)
-
-    print(f"Completed job {job_id}")
-
-    return f"result-{job_id}"
+    return f"processed-{job_id}"
 
 
 def main() -> None:
@@ -23,10 +15,10 @@ def main() -> None:
 
     tasks = []
 
-    for i in range(8):
+    for job_id in range(8):
         task = engine.submit(
             process_job,
-            i,
+            job_id,
         )
 
         tasks.append(task)
@@ -36,8 +28,9 @@ def main() -> None:
 
     for task in tasks:
         print(
-            task.task_id,
-            task.result,
+            f"{task.task_id} | "
+            f"{task.state.value} | "
+            f"{task.result}"
         )
 
 
