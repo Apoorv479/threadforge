@@ -91,9 +91,9 @@ class Worker(threading.Thread):
 
                 self.task_queue.put(task)
 
-                # This execution is no longer active.
-                self.metrics.record_failure(
-                    execution_time
+                
+                self.metrics.record_retry_failure(
+                     execution_time
                 )
 
             else:
