@@ -1,8 +1,7 @@
 import threading
-from typing import Optional
 
 from .queue import TaskQueue
-from .task import Task
+from .task import Task, TaskState
 
 
 class Worker(threading.Thread):
@@ -16,7 +15,9 @@ class Worker(threading.Thread):
         stop_event: threading.Event,
         worker_id: int,
     ):
-        super().__init__(name=f"threadforge-worker-{worker_id}")
+        super().__init__(
+            name=f"threadforge-worker-{worker_id}"
+        )
 
         self.task_queue = task_queue
         self.stop_event = stop_event
@@ -46,12 +47,18 @@ class Worker(threading.Thread):
                 self.task_queue.task_done()
 
     def _execute(self, task: Task) -> None:
-        """Execute a task and handle failures."""
+        """Execute a task and update its lifecycle state."""
+
+        task.state = TaskState.RUNNING
 
         try:
             task.result = task.execute()
+            task.state = TaskState.COMPLETED
+
             self.completed_tasks += 1
 
         except BaseException as exc:
             task.error = exc
+            task.state = TaskState.FAILED
+
             self.failed_tasks += 1
