@@ -1,3 +1,4 @@
+
 import threading
 from typing import Any, Callable
 
@@ -19,7 +20,6 @@ class ThreadForge:
         backpressure: BackpressurePolicy = (
             BackpressurePolicy.BLOCK
         ),
-        adaptive: bool = False,
         max_workers: int | None = None,
     ):
         if workers <= 0:
@@ -44,8 +44,6 @@ class ThreadForge:
         self.metrics = Metrics()
 
         self.stop_event = threading.Event()
-
-        self.adaptive = adaptive
 
         self._workers = workers
         self._max_workers = max_workers
