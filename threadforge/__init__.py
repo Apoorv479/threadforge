@@ -1,6 +1,7 @@
 """ThreadForge - lightweight concurrent job execution engine."""
 
 from .engine import ThreadForge
+from .metrics import Metrics, MetricsSnapshot
 from .queue import BackpressurePolicy
 from .task import Task, TaskState
 
@@ -11,4 +12,6 @@ __all__ = [
     "Task",
     "TaskState",
     "BackpressurePolicy",
+    "Metrics",
+    "MetricsSnapshot",
 ]
