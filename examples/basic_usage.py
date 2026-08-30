@@ -19,6 +19,7 @@ def main() -> None:
         task = engine.submit(
             process_job,
             job_id,
+            priority=job_id % 3,
         )
 
         tasks.append(task)
@@ -30,7 +31,7 @@ def main() -> None:
         print(
             f"{task.task_id} | "
             f"{task.state.value} | "
-            f"{task.result}"
+            f"{task.result()}"
         )
 
 
