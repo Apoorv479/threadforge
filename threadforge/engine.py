@@ -1,6 +1,7 @@
 import threading
 from typing import Any, Callable
 
+from .metrics import Metrics
 from .queue import BackpressurePolicy, TaskQueue
 from .task import Task
 from .worker import Worker
@@ -12,10 +13,12 @@ class ThreadForge:
     """
 
     def __init__(
-    self,
-    workers: int = 4,
-    queue_size: int = 100,
-    backpressure: BackpressurePolicy = BackpressurePolicy.BLOCK,
+        self,
+        workers: int = 4,
+        queue_size: int = 100,
+        backpressure: BackpressurePolicy = (
+            BackpressurePolicy.BLOCK
+        ),
     ):
         if workers <= 0:
             raise ValueError(
@@ -26,6 +29,10 @@ class ThreadForge:
             max_size=queue_size
         )
 
+        self.backpressure = backpressure
+
+        self.metrics = Metrics()
+
         self.stop_event = threading.Event()
 
         self.workers = [
@@ -33,6 +40,7 @@ class ThreadForge:
                 task_queue=self.task_queue,
                 stop_event=self.stop_event,
                 worker_id=i,
+                metrics=self.metrics,
             )
             for i in range(workers)
         ]
@@ -64,7 +72,8 @@ class ThreadForge:
 
         if not self._started:
             raise RuntimeError(
-                "ThreadForge must be started before submitting tasks"
+                "ThreadForge must be started before "
+                "submitting tasks"
             )
 
         if max_retries < 0:
@@ -80,7 +89,12 @@ class ThreadForge:
             max_retries=max_retries,
         )
 
-        self.task_queue.put(task)
+        self.task_queue.put(
+            task,
+            policy=self.backpressure,
+        )
+
+        self.metrics.record_submission()
 
         return task
 
@@ -101,3 +115,8 @@ class ThreadForge:
             worker.join()
 
         self._started = False
+
+    def stats(self):
+        """Return a snapshot of engine metrics."""
+
+        return self.metrics.snapshot()
