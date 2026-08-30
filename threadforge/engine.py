@@ -1,7 +1,7 @@
 import threading
 from typing import Any, Callable
 
-from .queue import TaskQueue
+from .queue import BackpressurePolicy, TaskQueue
 from .task import Task
 from .worker import Worker
 
@@ -12,9 +12,10 @@ class ThreadForge:
     """
 
     def __init__(
-        self,
-        workers: int = 4,
-        queue_size: int = 100,
+    self,
+    workers: int = 4,
+    queue_size: int = 100,
+    backpressure: BackpressurePolicy = BackpressurePolicy.BLOCK,
     ):
         if workers <= 0:
             raise ValueError(
