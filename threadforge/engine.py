@@ -17,9 +17,13 @@ class ThreadForge:
         queue_size: int = 100,
     ):
         if workers <= 0:
-            raise ValueError("workers must be greater than zero")
+            raise ValueError(
+                "workers must be greater than zero"
+            )
 
-        self.task_queue = TaskQueue(max_size=queue_size)
+        self.task_queue = TaskQueue(
+            max_size=queue_size
+        )
 
         self.stop_event = threading.Event()
 
@@ -50,6 +54,7 @@ class ThreadForge:
         fn: Callable[..., Any],
         *args: Any,
         priority: int = 0,
+        max_retries: int = 0,
         **kwargs: Any,
     ) -> Task:
         """
@@ -61,11 +66,17 @@ class ThreadForge:
                 "ThreadForge must be started before submitting tasks"
             )
 
+        if max_retries < 0:
+            raise ValueError(
+                "max_retries cannot be negative"
+            )
+
         task = Task(
             fn=fn,
             args=args,
             kwargs=kwargs,
             priority=priority,
+            max_retries=max_retries,
         )
 
         self.task_queue.put(task)
@@ -74,10 +85,14 @@ class ThreadForge:
 
     def wait(self) -> None:
         """Wait until all queued tasks are processed."""
+
         self.task_queue.join()
 
     def shutdown(self) -> None:
         """Stop all worker threads."""
+
+        if not self._started:
+            return
 
         self.stop_event.set()
 
