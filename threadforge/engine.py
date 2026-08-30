@@ -3,8 +3,8 @@ from typing import Any, Callable
 
 from .metrics import Metrics
 from .queue import BackpressurePolicy, TaskQueue
+from .scaler import AdaptiveWorkerPool
 from .task import Task
-from .worker import Worker
 
 
 class ThreadForge:
@@ -19,10 +19,20 @@ class ThreadForge:
         backpressure: BackpressurePolicy = (
             BackpressurePolicy.BLOCK
         ),
+        adaptive: bool = False,
+        max_workers: int | None = None,
     ):
         if workers <= 0:
             raise ValueError(
                 "workers must be greater than zero"
+            )
+
+        if max_workers is None:
+            max_workers = workers
+
+        if max_workers < workers:
+            raise ValueError(
+                "max_workers must be >= workers"
             )
 
         self.task_queue = TaskQueue(
@@ -35,28 +45,32 @@ class ThreadForge:
 
         self.stop_event = threading.Event()
 
-        self.workers = [
-            Worker(
-                task_queue=self.task_queue,
-                stop_event=self.stop_event,
-                worker_id=i,
-                metrics=self.metrics,
-            )
-            for i in range(workers)
-        ]
+        self.adaptive = adaptive
+
+        self._workers = workers
+        self._max_workers = max_workers
+
+        self.worker_pool: AdaptiveWorkerPool | None = None
 
         self._started = False
 
     def start(self) -> None:
-        """Start all worker threads."""
+        """Start the execution engine."""
 
         if self._started:
             return
 
         self._started = True
 
-        for worker in self.workers:
-            worker.start()
+        self.worker_pool = AdaptiveWorkerPool(
+            task_queue=self.task_queue,
+            stop_event=self.stop_event,
+            metrics=self.metrics,
+            min_workers=self._workers,
+            max_workers=self._max_workers,
+        )
+
+        self.worker_pool.start()
 
     def submit(
         self,
@@ -104,15 +118,15 @@ class ThreadForge:
         self.task_queue.join()
 
     def shutdown(self) -> None:
-        """Stop all worker threads."""
+        """Stop the execution engine."""
 
         if not self._started:
             return
 
         self.stop_event.set()
 
-        for worker in self.workers:
-            worker.join()
+        if self.worker_pool is not None:
+            self.worker_pool.shutdown()
 
         self._started = False
 
@@ -120,3 +134,12 @@ class ThreadForge:
         """Return a snapshot of engine metrics."""
 
         return self.metrics.snapshot()
+
+    @property
+    def worker_count(self) -> int:
+        """Return the current worker count."""
+
+        if self.worker_pool is None:
+            return 0
+
+        return self.worker_pool.worker_count
