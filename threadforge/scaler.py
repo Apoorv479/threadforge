@@ -34,16 +34,6 @@ class AdaptiveWorkerPool:
                 "max_workers must be >= min_workers"
             )
 
-        if scale_up_threshold < 0:
-            raise ValueError(
-                "scale_up_threshold cannot be negative"
-            )
-
-        if scale_down_threshold < 0:
-            raise ValueError(
-                "scale_down_threshold cannot be negative"
-            )
-
         self.task_queue = task_queue
         self.stop_event = stop_event
         self.metrics = metrics
@@ -80,7 +70,10 @@ class AdaptiveWorkerPool:
 
         self._controller.start()
 
-    def _start_worker(self, worker_id: int) -> None:
+    def _start_worker(
+        self,
+        worker_id: int,
+    ) -> None:
         """Create and start a new worker."""
 
         worker = Worker(
@@ -91,12 +84,14 @@ class AdaptiveWorkerPool:
         )
 
         self._workers.append(worker)
+
         worker.start()
 
     def _control_loop(self) -> None:
         """Continuously evaluate worker pool pressure."""
 
         while not self.stop_event.is_set():
+
             time.sleep(self.check_interval)
 
             if self.stop_event.is_set():
@@ -110,6 +105,8 @@ class AdaptiveWorkerPool:
         queue_depth = self.task_queue.qsize()
 
         with self._lock:
+            self._remove_stopped_workers()
+
             worker_count = len(self._workers)
 
         now = time.monotonic()
@@ -133,34 +130,77 @@ class AdaptiveWorkerPool:
         """Add one worker."""
 
         with self._lock:
-            worker_id = len(self._workers)
+
+            if len(self._workers) >= self.max_workers:
+                return
+
+            worker_id = self._next_worker_id()
 
             self._start_worker(worker_id)
 
             self._last_scale_time = time.monotonic()
 
     def _scale_down(self) -> None:
-        """
-        Reduce the worker pool.
+        """Retire one worker."""
 
-        Workers naturally exit when the global stop event
-        is set. Individual worker retirement will be added
-        in a later lifecycle phase.
-        """
+        with self._lock:
 
-        # Individual worker retirement requires a dedicated
-        # worker stop signal. We intentionally defer that
-        # mechanism until the lifecycle controller is added.
-        return
+            if len(self._workers) <= self.min_workers:
+                return
+
+            worker = self._workers[-1]
+
+            worker.stop()
+
+            self._last_scale_time = time.monotonic()
+
+    def _remove_stopped_workers(self) -> None:
+        """Remove workers that have already terminated."""
+
+        alive_workers = []
+
+        for worker in self._workers:
+
+            if worker.is_alive():
+                alive_workers.append(worker)
+
+        self._workers = alive_workers
+
+    def _next_worker_id(self) -> int:
+        """Generate the next worker ID."""
+
+        existing_ids = {
+            worker.worker_id
+            for worker in self._workers
+        }
+
+        worker_id = 0
+
+        while worker_id in existing_ids:
+            worker_id += 1
+
+        return worker_id
 
     @property
     def worker_count(self) -> int:
-        """Return the current number of workers."""
+        """Return the current worker count."""
 
         with self._lock:
+            self._remove_stopped_workers()
+
             return len(self._workers)
 
     def shutdown(self) -> None:
-        """Wait for the controller to stop."""
+        """Stop all workers and the controller."""
+
+        with self._lock:
+
+            workers = list(self._workers)
+
+        for worker in workers:
+            worker.stop()
+
+        for worker in workers:
+            worker.join()
 
         self._controller.join()
