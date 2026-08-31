@@ -44,3 +44,33 @@ def test_worker_pool_scales_up():
 
     engine.wait()
     engine.shutdown()
+
+
+def test_worker_pool_scales_down():
+    engine = ThreadForge(
+        workers=1,
+        max_workers=3,
+        queue_size=100,
+    )
+
+    engine.start()
+
+    for _ in range(30):
+        engine.submit(
+            time.sleep,
+            0.05,
+        )
+
+    engine.wait()
+
+    deadline = time.monotonic() + 8
+
+    while (
+        engine.worker_count > 1
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.1)
+
+    assert engine.worker_count == 1
+
+    engine.shutdown()
