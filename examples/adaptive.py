@@ -13,7 +13,7 @@ def main() -> None:
         workers=2,
         max_workers=6,
         queue_size=100,
-        adaptive=True,
+        
     )
 
     engine.start()
