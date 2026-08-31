@@ -8,7 +8,7 @@ from .task import Task
 
 class Worker(threading.Thread):
     """
-    Worker thread that continuously consumes tasks.
+    Worker thread that consumes tasks from the queue.
     """
 
     def __init__(
@@ -24,17 +24,28 @@ class Worker(threading.Thread):
 
         self.task_queue = task_queue
         self.stop_event = stop_event
-        self.worker_id = worker_id
         self.metrics = metrics
+        self.worker_id = worker_id
+
+        self._worker_stop = threading.Event()
 
         self.completed_tasks = 0
         self.failed_tasks = 0
         self.retried_tasks = 0
 
+        self.last_activity = time.monotonic()
+
+    def stop(self) -> None:
+        """Request this worker to stop."""
+
+        self._worker_stop.set()
+
     def run(self) -> None:
         """Worker execution loop."""
 
         while not self.stop_event.is_set():
+            if self._worker_stop.is_set():
+                break
 
             try:
                 task = self.task_queue.get(
@@ -51,8 +62,10 @@ class Worker(threading.Thread):
             finally:
                 self.task_queue.task_done()
 
+            self.last_activity = time.monotonic()
+
     def _execute(self, task: Task) -> None:
-        """Execute task and update metrics."""
+        """Execute a task and update metrics."""
 
         task.mark_running()
 
@@ -89,12 +102,11 @@ class Worker(threading.Thread):
 
                 self.retried_tasks += 1
 
-                self.task_queue.put(task)
-
-                
                 self.metrics.record_retry_failure(
-                     execution_time
+                    execution_time
                 )
+
+                self.task_queue.put(task)
 
             else:
 
