@@ -1,11 +1,21 @@
-
 import threading
+from enum import Enum
 from typing import Any, Callable
 
 from .metrics import Metrics
 from .queue import BackpressurePolicy, TaskQueue
 from .scaler import AdaptiveWorkerPool
 from .task import Task
+
+
+class EngineState(str, Enum):
+    """Lifecycle states of the ThreadForge engine."""
+
+    CREATED = "created"
+    RUNNING = "running"
+    DRAINING = "draining"
+    STOPPING = "stopping"
+    STOPPED = "stopped"
 
 
 class ThreadForge:
@@ -50,25 +60,35 @@ class ThreadForge:
 
         self.worker_pool: AdaptiveWorkerPool | None = None
 
-        self._started = False
+        self._state = EngineState.CREATED
+
+        self._state_lock = threading.Lock()
 
     def start(self) -> None:
         """Start the execution engine."""
 
-        if self._started:
-            return
+        with self._state_lock:
 
-        self._started = True
+            if self._state == EngineState.RUNNING:
+                return
 
-        self.worker_pool = AdaptiveWorkerPool(
-            task_queue=self.task_queue,
-            stop_event=self.stop_event,
-            metrics=self.metrics,
-            min_workers=self._workers,
-            max_workers=self._max_workers,
-        )
+            if self._state != EngineState.CREATED:
+                raise RuntimeError(
+                    "ThreadForge can only be started "
+                    "from CREATED state"
+                )
 
-        self.worker_pool.start()
+            self.worker_pool = AdaptiveWorkerPool(
+                task_queue=self.task_queue,
+                stop_event=self.stop_event,
+                metrics=self.metrics,
+                min_workers=self._workers,
+                max_workers=self._max_workers,
+            )
+
+            self.worker_pool.start()
+
+            self._state = EngineState.RUNNING
 
     def submit(
         self,
@@ -82,11 +102,13 @@ class ThreadForge:
         Submit a task to the execution engine.
         """
 
-        if not self._started:
-            raise RuntimeError(
-                "ThreadForge must be started before "
-                "submitting tasks"
-            )
+        with self._state_lock:
+
+            if self._state != EngineState.RUNNING:
+                raise RuntimeError(
+                    "Cannot submit tasks when engine is "
+                    f"{self._state.value}"
+                )
 
         if max_retries < 0:
             raise ValueError(
@@ -116,22 +138,53 @@ class ThreadForge:
         self.task_queue.join()
 
     def shutdown(self) -> None:
-        """Stop the execution engine."""
+        """
+        Gracefully shut down the engine.
 
-        if not self._started:
-            return
+        New tasks are rejected while existing queued and
+        running tasks are allowed to complete.
+        """
+
+        with self._state_lock:
+
+            if self._state == EngineState.STOPPED:
+                return
+
+            if self._state == EngineState.CREATED:
+                self._state = EngineState.STOPPED
+                return
+
+            if self._state != EngineState.RUNNING:
+                return
+
+            self._state = EngineState.DRAINING
+
+        # Stop accepting new work, but allow workers
+        # to finish existing work.
+        self.task_queue.join()
+
+        with self._state_lock:
+            self._state = EngineState.STOPPING
 
         self.stop_event.set()
 
         if self.worker_pool is not None:
             self.worker_pool.shutdown()
 
-        self._started = False
+        with self._state_lock:
+            self._state = EngineState.STOPPED
 
     def stats(self):
         """Return a snapshot of engine metrics."""
 
         return self.metrics.snapshot()
+
+    @property
+    def state(self) -> EngineState:
+        """Return the current engine state."""
+
+        with self._state_lock:
+            return self._state
 
     @property
     def worker_count(self) -> int:
